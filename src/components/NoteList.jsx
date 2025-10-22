@@ -1,70 +1,126 @@
 // src/components/NoteList.jsx
-export default function NoteList({ notes, onEdit, onDelete, onAI }) {
-  if (!notes.length) return <p>No notes yet. Create your first note above!</p>;
+import { useState } from "react";
+
+export default function NoteList({ notes }) {
+  const [loadingId, setLoadingId] = useState(null);
+  const [summaries, setSummaries] = useState({});
+  const [quizzes, setQuizzes] = useState({});
+
+  if (notes.length === 0) {
+    return <p>No notes yet. Create your first note above!</p>;
+  }
+
+  async function callAI(action, note) {
+    setLoadingId(note.id);
+    try {
+      const res = await fetch("/api/openai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, text: note.content }),
+      });
+      const data = await res.json();
+
+      if (action === "summarize") {
+        setSummaries((prev) => ({ ...prev, [note.id]: data.content }));
+      } else if (action === "quiz") {
+        setQuizzes((prev) => ({ ...prev, [note.id]: data.content }));
+      }
+    } catch (err) {
+      alert("AI request failed. Check your OpenAI key in Vercel settings.");
+    } finally {
+      setLoadingId(null);
+    }
+  }
 
   return (
-    <ul style={{ display: "grid", gap: ".75rem", listStyle: "none", padding: 0, margin: 0 }}>
-      {notes.map((n) => (
-        <li
-          key={n.id}
+    <div>
+      {notes.map((note) => (
+        <div
+          key={note.id}
           style={{
-            border: "1px solid #e5e7eb",
-            borderRadius: "10px",
-            padding: ".75rem",
-            background: "#fafafa",
+            borderBottom: "1px solid #e5e7eb",
+            paddingBottom: "1rem",
+            marginBottom: "1rem",
           }}
         >
-          <div style={{ display: "flex", gap: ".5rem", alignItems: "baseline", justifyContent: "space-between" }}>
-            <div>
-              <strong>{n.title || "Untitled"}</strong>{" "}
-              <span style={{ fontSize: ".75rem", color: "#6b7280" }}>{new Date(n.date).toLocaleString()}</span>
-              {n.subject && (
-                <span
-                  style={{
-                    marginLeft: ".5rem",
-                    fontSize: ".75rem",
-                    background: "#eef2ff",
-                    color: "#3730a3",
-                    padding: ".1rem .45rem",
-                    borderRadius: "999px",
-                  }}
-                >
-                  {n.subject}
-                </span>
-              )}
-            </div>
+          <h3 style={{ margin: 0 }}>
+            {note.title || "Untitled"}{" "}
+            <span style={{ color: "#6b7280", fontSize: "0.9rem" }}>
+              ({new Date(note.date).toLocaleString()})
+            </span>
+          </h3>
 
-            <div style={{ display: "flex", gap: ".4rem" }}>
-              <button onClick={() => onAI("summarize", n.id)} className="btn-ghost">📝 Summarize</button>
-              <button onClick={() => onAI("quiz", n.id)} className="btn-ghost">❓ Quiz</button>
-              <button onClick={() => onEdit(n.id)} className="btn-ghost">✏️ Edit</button>
-              <button onClick={() => onDelete(n.id)} className="btn-danger">🗑️ Delete</button>
+          {note.subject && (
+            <div style={{ color: "#2563eb", fontWeight: 500, marginBottom: ".25rem" }}>
+              {note.subject}
             </div>
+          )}
+
+          <p style={{ whiteSpace: "pre-line" }}>{note.content}</p>
+
+          <div style={{ display: "flex", gap: ".5rem", marginTop: ".5rem" }}>
+            <button
+              onClick={() => callAI("summarize", note)}
+              disabled={loadingId === note.id}
+              style={{
+                padding: ".4rem .8rem",
+                borderRadius: "6px",
+                border: "1px solid #2563eb",
+                background: "transparent",
+                color: "#2563eb",
+                cursor: "pointer",
+              }}
+            >
+              🧠 Summarize
+            </button>
+
+            <button
+              onClick={() => callAI("quiz", note)}
+              disabled={loadingId === note.id}
+              style={{
+                padding: ".4rem .8rem",
+                borderRadius: "6px",
+                border: "1px solid #16a34a",
+                background: "transparent",
+                color: "#16a34a",
+                cursor: "pointer",
+              }}
+            >
+              ❓ Quiz
+            </button>
           </div>
 
-          <div style={{ marginTop: ".5rem", whiteSpace: "pre-wrap" }}>{n.content}</div>
-
-          {n.summary && (
-            <div style={{ marginTop: ".5rem", padding: ".5rem", background: "#ffffff", border: "1px dashed #d1d5db", borderRadius: "8px" }}>
-              <strong>AI Summary</strong>
-              <div style={{ marginTop: ".25rem", whiteSpace: "pre-wrap" }}>{n.summary}</div>
+          {summaries[note.id] && (
+            <div
+              style={{
+                background: "#f9fafb",
+                border: "1px solid #e5e7eb",
+                borderRadius: "8px",
+                marginTop: ".75rem",
+                padding: ".75rem",
+              }}
+            >
+              <strong>AI Summary:</strong>
+              <p style={{ marginTop: ".3rem" }}>{summaries[note.id]}</p>
             </div>
           )}
 
-          {Array.isArray(n.quiz) && n.quiz.length > 0 && (
-            <div style={{ marginTop: ".5rem", padding: ".5rem", background: "#ffffff", border: "1px dashed #d1d5db", borderRadius: "8px" }}>
-              <strong>Quiz</strong>
-              <ol style={{ marginTop: ".25rem" }}>
-                {n.quiz.map((q, i) => (
-                  <li key={i} style={{ marginBottom: ".25rem" }}>
-                    {q.q} {q.a ? <em>— Answer: {q.a}</em> : null}
-                  </li>
-                ))}
-              </ol>
+          {quizzes[note.id] && (
+            <div
+              style={{
+                background: "#ecfdf5",
+                border: "1px solid #a7f3d0",
+                borderRadius: "8px",
+                marginTop: ".75rem",
+                padding: ".75rem",
+              }}
+            >
+              <strong>AI Quiz:</strong>
+              <p style={{ marginTop: ".3rem" }}>{quizzes[note.id]}</p>
             </div>
           )}
-        </li>
+        </div>
       ))}
-    </ul>
+    </div>
   );
 }
