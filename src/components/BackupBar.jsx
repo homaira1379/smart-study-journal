@@ -1,110 +1,219 @@
-// src/components/BackupBar.jsx
-import { nanoid } from "nanoid";
+import { saveAs } from "file-saver";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
 
-export default function BackupBar({ notes = [], onImport }) {
-  function exportJSON() {
-    const data = JSON.stringify(notes, null, 2);
-    const blob = new Blob([data], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const ts = new Date().toISOString().split("T")[0];
-    a.download = `smart-study-notes-${ts}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+const uid =
+  (typeof crypto !== "undefined" && crypto.randomUUID)
+    ? () => crypto.randomUUID()
+    : () => String(Date.now()) + Math.random().toString(36).slice(2);
+
+// Convert Excel serial (e.g. 45257) to ISO string; otherwise try Date(...)
+function excelDateToISO(v) {
+  if (v == null || v === "") return new Date().toISOString();
+  // If it’s already a valid date string
+  const asDate = new Date(v);
+  if (!Number.isNaN(asDate.getTime())) return asDate.toISOString();
+
+  // Try Excel serial: days since 1899-12-30
+  const serial = Number(v);
+  if (!Number.isNaN(serial)) {
+    const epoch = new Date(Date.UTC(1899, 11, 30));
+    const ms = serial * 24 * 60 * 60 * 1000;
+    return new Date(epoch.getTime() + ms).toISOString();
   }
 
-  function importJSON() {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "application/json";
-    input.onchange = async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
+  // Fallback: now
+  return new Date().toISOString();
+}
+
+export default function BackupBar({ notes = [], onImport }) {
+  // ---------- EXPORT: PDF ----------
+  function exportPDF() {
+    const doc = new jsPDF();
+    doc.setFontSize(12);
+    doc.text("Smart Study Journal - Notes", 10, 10);
+
+    let y = 20;
+    notes.forEach((n, i) => {
+      const block = [
+        `#${i + 1}  ${n.title || "Untitled"}`,
+        `Subject: ${n.subject || "—"}`,
+        `Date: ${new Date(n.date).toLocaleString()}`,
+        "",
+        (n.content || "").trim(),
+        "",
+        "———————————————",
+      ].join("\n");
+
+      const lines = doc.splitTextToSize(block, 180);
+      if (y + lines.length * 6 > 280) {
+        doc.addPage();
+        y = 20;
+      }
+      doc.text(lines, 10, y);
+      y += lines.length * 6;
+    });
+
+    doc.save("SmartStudyJournal_Notes.pdf");
+  }
+
+  // ---------- EXPORT: EXCEL ----------
+  function exportExcel() {
+    const rows = notes.map((n, i) => ({
+      Index: i + 1,
+      Title: n.title || "",
+      Subject: n.subject || "",
+      Date: new Date(n.date).toLocaleString(),
+      Content: n.content || "",
+      Summary: n.summary || "",
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Notes");
+    const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    saveAs(new Blob([wbout], { type: "application/octet-stream" }), "SmartStudyJournal_Notes.xlsx");
+  }
+
+  // ---------- IMPORT: JSON ----------
+  function importJSON(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
       try {
-        const text = await file.text();
-        const parsed = JSON.parse(text);
-        if (!Array.isArray(parsed)) throw new Error("File must contain a JSON array.");
+        const imported = JSON.parse(String(evt.target?.result || "[]"));
+        if (!Array.isArray(imported)) throw new Error("Not an array");
+        const normalized = imported.map((n) => ({
+          id: uid(),
+          title: String(n?.title ?? "").trim(),
+          subject: String(n?.subject ?? "").trim(),
+          content: String(n?.content ?? "").trim(),
+          summary: String(n?.summary ?? "").trim(),
+          date: excelDateToISO(n?.date),
+          quiz: Array.isArray(n?.quiz) ? n.quiz : undefined,
+        }));
+        onImport?.([...notes, ...normalized]);
+        alert("Imported JSON successfully.");
+      } catch (err) {
+        alert("Import JSON failed: " + (err?.message || String(err)));
+      }
+    };
+    reader.readAsText(file);
+    // reset input so the same file can be chosen again
+    e.target.value = "";
+  }
 
-        // normalize + validate
-        const cleaned = parsed.map((n) => normalizeNote(n)).filter(Boolean);
+  // ---------- IMPORT: EXCEL ----------
+  function importExcel(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-        if (cleaned.length === 0) {
-          alert("No valid notes found in file.");
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = new Uint8Array(evt.target.result);
+        const wb = XLSX.read(data, { type: "array" });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+        // Normalize header names
+        const normalized = rows.map((r) => {
+          // Allow various casing/aliases
+          const title   = r.Title ?? r.title ?? r.TITLE ?? "";
+          const subject = r.Subject ?? r.subject ?? r.SUBJECT ?? "";
+          const content = r.Content ?? r.content ?? r.CONTENT ?? "";
+          const date    = r.Date ?? r.date ?? r.DATE ?? "";
+          const summary = r.Summary ?? r.summary ?? r.SUMMARY ?? "";
+
+          return {
+            id: uid(),
+            title: String(title).trim(),
+            subject: String(subject).trim(),
+            content: String(content).trim(),
+            summary: String(summary).trim(),
+            date: excelDateToISO(date),
+            // quiz intentionally omitted on Excel import
+          };
+        });
+
+        if (!normalized.length) {
+          alert("No rows found. Make sure your sheet has headers: Title, Subject, Content, Date, Summary.");
           return;
         }
 
-        // merge by id (imported overwrites existing with same id)
-        const map = new Map();
-        // start with current
-        for (const n of notes) map.set(n.id, n);
-        // overwrite/insert imported
-        for (const n of cleaned) map.set(n.id, n);
-
-        const merged = Array.from(map.values()).sort(
-          (a, b) => new Date(b.date) - new Date(a.date)
-        );
-
-        onImport?.(merged);
-        alert(`Imported ${cleaned.length} note(s).`);
+        onImport?.([...notes, ...normalized]);
+        alert(`Imported ${normalized.length} row(s) from Excel.`);
       } catch (err) {
-        alert("Import failed: " + err.message);
+        alert("Import Excel failed: " + (err?.message || String(err)));
       }
     };
-    input.click();
+    reader.readAsArrayBuffer(file);
+    e.target.value = "";
   }
 
   return (
-    <div style={bar}>
-      <div style={{ fontWeight: 600 }}>Backup</div>
-      <div style={{ display: "flex", gap: ".5rem", flexWrap: "wrap" }}>
-        <button onClick={exportJSON} style={btnBlue} title="Download all notes as JSON">
-          ⬇️ Export JSON
-        </button>
-        <button onClick={importJSON} style={btnGreen} title="Load notes from a JSON file">
-          ⬆️ Import JSON
-        </button>
-      </div>
+    <div
+      style={{
+        display: "flex",
+        gap: ".75rem",
+        alignItems: "center",
+        marginBottom: "1rem",
+        flexWrap: "wrap",
+      }}
+    >
+      <button
+        onClick={exportPDF}
+        style={{
+          padding: ".6rem .9rem",
+          background: "#ef4444",
+          color: "white",
+          border: "none",
+          borderRadius: "8px",
+          cursor: "pointer",
+        }}
+      >
+        📄 Export PDF
+      </button>
+
+      <button
+        onClick={exportExcel}
+        style={{
+          padding: ".6rem .9rem",
+          background: "#22c55e",
+          color: "white",
+          border: "none",
+          borderRadius: "8px",
+          cursor: "pointer",
+        }}
+      >
+        📊 Export Excel
+      </button>
+
+      <label
+        style={{
+          padding: ".6rem .9rem",
+          background: "#3b82f6",
+          color: "white",
+          borderRadius: "8px",
+          cursor: "pointer",
+        }}
+      >
+        ⬆ Import JSON
+        <input type="file" accept=".json" onChange={importJSON} style={{ display: "none" }} />
+      </label>
+
+      <label
+        style={{
+          padding: ".6rem .9rem",
+          background: "#0ea5e9",
+          color: "white",
+          borderRadius: "8px",
+          cursor: "pointer",
+        }}
+      >
+        ⬆ Import Excel
+        <input type="file" accept=".xlsx,.xls" onChange={importExcel} style={{ display: "none" }} />
+      </label>
     </div>
   );
 }
-
-function normalizeNote(n) {
-  try {
-    const id = (typeof n.id === "string" && n.id) || nanoid();
-    const title = String(n.title ?? "").trim();
-    const subject = String(n.subject ?? "").trim();
-    const content = String(n.content ?? "").trim();
-    const dateRaw = n.date ?? Date.now();
-    const date = isNaN(new Date(dateRaw)) ? new Date().toISOString() : new Date(dateRaw).toISOString();
-
-    const note = { id, title, subject, content, date };
-
-    // optional fields
-    if (typeof n.summary === "string") note.summary = n.summary;
-    if (Array.isArray(n.quiz)) note.quiz = n.quiz;
-    return note;
-  } catch {
-    return null;
-  }
-}
-
-/* styles */
-const bar = {
-  margin: "0.75rem 0 1rem",
-  padding: ".6rem .8rem",
-  border: "1px solid #e5e7eb",
-  borderRadius: "10px",
-  background: "#f8fafc",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-};
-const btnBase = {
-  padding: ".45rem .8rem",
-  borderRadius: "8px",
-  background: "transparent",
-  cursor: "pointer",
-};
-const btnBlue = { ...btnBase, border: "1px solid #2563eb", color: "#2563eb" };
-const btnGreen = { ...btnBase, border: "1px solid #16a34a", color: "#16a34a" };
