@@ -1,70 +1,62 @@
-// src/components/NoteForm.jsx
-export default function NoteForm({ title, subject, content, setTitle, setSubject, setContent, addNote }) {
+import React, { useState } from "react";
+
+export default function NoteForm({ onAdd }) {
+  const [title, setTitle] = useState("");
+  const [subject, setSubject] = useState("");
+  const [content, setContent] = useState("");
+
+  function reset() {
+    setTitle(""); setSubject(""); setContent("");
+  }
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    const t = title.trim();
+    const s = subject.trim();
+    const c = content.trim();
+    if (!c) {
+      alert("Please write your note content.");
+      return;
+    }
+    console.log("[NoteForm] submit", { t, s, c });
+    try {
+      onAdd?.({ title: t, subject: s, content: c });
+      reset();
+    } catch (err) {
+      console.error("[NoteForm] onAdd error", err);
+      alert("Could not add note. Check console for details.");
+    }
+  }
+
   return (
-    <div
-      style={{
-        background: "#f9fafb",
-        padding: "1rem",
-        borderRadius: "10px",
-        marginBottom: "1.5rem",
-        border: "1px solid #e5e7eb",
-      }}
-    >
+    <form onSubmit={handleSubmit}
+      style={{ display:"grid", gap:".6rem", background:"#fff", border:"1px solid #e2e8f0", borderRadius:"12px", padding:"1rem", marginBottom:"1rem" }}>
       <input
-        type="text"
-        placeholder="Title"
         value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        style={{
-          width: "100%",
-          padding: "0.5rem",
-          marginBottom: "0.5rem",
-          borderRadius: "6px",
-          border: "1px solid #d1d5db",
-        }}
+        onChange={(e)=>setTitle(e.target.value)}
+        placeholder="Title"
+        style={{ padding:".65rem .75rem", border:"1px solid #e2e8f0", borderRadius:"10px" }}
       />
-
       <input
-        type="text"
-        placeholder="Subject (optional)"
         value={subject}
-        onChange={(e) => setSubject(e.target.value)}
-        style={{
-          width: "100%",
-          padding: "0.5rem",
-          marginBottom: "0.5rem",
-          borderRadius: "6px",
-          border: "1px solid #d1d5db",
-        }}
+        onChange={(e)=>setSubject(e.target.value)}
+        placeholder="Subject (optional)"
+        style={{ padding:".65rem .75rem", border:"1px solid #e2e8f0", borderRadius:"10px" }}
       />
-
       <textarea
-        rows="5"
-        placeholder="Write your note..."
         value={content}
-        onChange={(e) => setContent(e.target.value)}
-        style={{
-          width: "100%",
-          padding: "0.6rem",
-          borderRadius: "6px",
-          border: "1px solid #d1d5db",
-        }}
-      ></textarea>
-
-      <button
-        onClick={addNote}
-        style={{
-          marginTop: "0.75rem",
-          padding: "0.6rem 1rem",
-          backgroundColor: "#2563eb",
-          color: "#fff",
-          border: "none",
-          borderRadius: "6px",
-          cursor: "pointer",
-        }}
-      >
-        ➕ Add Note
-      </button>
-    </div>
+        onChange={(e)=>setContent(e.target.value)}
+        placeholder="Write your note..."
+        rows={6}
+        style={{ padding:".75rem .85rem", border:"1px solid #e2e8f0", borderRadius:"10px", resize:"vertical", whiteSpace:"pre-wrap" }}
+      />
+      <div>
+        <button type="submit"
+          disabled={!content.trim()}
+          style={{ padding:".6rem .9rem", borderRadius:"10px", border:"1px solid #2563eb", color:"#2563eb", background:"transparent", cursor:"pointer" }}>
+          ➕ Add Note
+        </button>
+      </div>
+    </form>
   );
 }
