@@ -1,14 +1,24 @@
-// src/lib/storage.js
-const KEY = "ssj.notes.v1";
+// /src/lib/storage.js
+const KEY = "smart-study-notes";
 
 export function loadNotes() {
   try {
-    return JSON.parse(localStorage.getItem(KEY)) || [];
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
+    // corrupted storage → reset
+    localStorage.removeItem(KEY);
     return [];
   }
 }
 
 export function saveNotes(notes) {
-  localStorage.setItem(KEY, JSON.stringify(notes));
+  try {
+    const safe = Array.isArray(notes) ? notes : [];
+    localStorage.setItem(KEY, JSON.stringify(safe));
+  } catch (e) {
+    console.error("saveNotes failed:", e);
+  }
 }

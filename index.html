@@ -2,12 +2,43 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>smart-study-journal</title>
+    <title>Smart Study Journal</title>
+    <style>
+      /* make sure we see text no matter what */
+      html, body, #root { height: 100%; margin: 0; }
+      body { font-family: system-ui, Arial, sans-serif; }
+      #errbox {
+        position: fixed; inset: 0; display: none; padding: 16px;
+        background: #fff; color: #b91c1c; overflow:auto; z-index: 99999;
+        border-top: 4px solid #ef4444;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        white-space: pre-wrap;
+      }
+      #loading { position: fixed; top: 12px; left: 12px; color: #111; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="loading">Loading…</div>
+    <div id="errbox"></div>
+    <div id="root">If you see this text, HTML is loading.</div>
+
+    <script>
+      // show any error directly on the page
+      const errbox = document.getElementById('errbox');
+      function showErr(msg, src, line, col, err) {
+        errbox.style.display = 'block';
+        errbox.textContent =
+          '🛑 Runtime error\\n' +
+          (msg?.message || msg || '') + '\\n\\n' +
+          (err?.stack || '');
+        return false;
+      }
+      window.addEventListener('error', e => showErr(e.message, e.filename, e.lineno, e.colno, e.error));
+      window.addEventListener('unhandledrejection', e => showErr(e.reason));
+    </script>
+
+    <!-- Leading slash matters -->
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
